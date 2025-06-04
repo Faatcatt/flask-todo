@@ -2,6 +2,8 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask, render_template, request, redirect, url_for, flash
 from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, date
+
 
 app = Flask(__name__)
 app.secret_key = 'tajny_klucz'  # do sesji logowania
@@ -22,6 +24,7 @@ class Zadanie(db.Model):
     tresc = db.Column(db.String(200), nullable=False)
     zrobione = db.Column(db.Boolean, default=False)
     uzytkownik_id = db.Column(db.Integer, db.ForeignKey('uzytkownik.id'))
+    termin = db.Column(db.Date, nullable=True)  # nowe pole na termin wykonania
 
 class Uzytkownik(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -90,7 +93,10 @@ def przelacz_status(zadanie_id):
 def index():
     if request.method == "POST":
         tresc = request.form["zadanie"]
-        nowe = Zadanie(tresc=tresc, uzytkownik_id=current_user.id)
+        termin_str = request.form.get("termin")
+        termin = datetime.strptime(termin_str, '%Y-%m-%d').date() if termin_str else None
+
+        nowe = Zadanie(tresc=tresc, uzytkownik_id=current_user.id, termin=termin)
         db.session.add(nowe)
         db.session.commit()
         return redirect("/")
@@ -106,6 +112,29 @@ def usun_zadanie(zadanie_id):
         db.session.delete(zadanie)
         db.session.commit()
     return redirect("/")
+
+@app.route("/edytuj/<int:zadanie_id>", methods=["GET", "POST"])
+@login_required
+def edytuj_zadanie(zadanie_id):
+    zadanie = Zadanie.query.get_or_404(zadanie_id)
+    
+    # Sprawdzenie, czy zadanie należy do zalogowanego użytkownika
+    if zadanie.uzytkownik_id != current_user.id:
+        flash("Nie masz dostępu do tego zadania.")
+        return redirect("/")
+    
+    if request.method == "POST":
+        tresc = request.form["tresc"]
+        termin_str = request.form.get("termin")
+        termin = datetime.strptime(termin_str, '%Y-%m-%d').date() if termin_str else None
+
+        zadanie.tresc = tresc
+        zadanie.termin = termin
+        db.session.commit()
+        flash("Zadanie zostało zaktualizowane.")
+        return redirect("/")
+    
+    return render_template("edytuj.html", zadanie=zadanie)
 
 # tworzenie bazy przy pierwszym uruchomieniu
 with app.app_context():
